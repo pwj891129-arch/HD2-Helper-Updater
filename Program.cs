@@ -157,7 +157,7 @@ internal sealed class UpdaterForm : Form
     private readonly Panel _progressFill = new();
     private readonly Label _statusLabel = new();
     private readonly Label _titleLabel = new();
-    private readonly Label _newVersionLabel = new();
+    private readonly Label _helperVersionLabel = new();
     private readonly Button _checkButton = new();
     private readonly Button _historyButton = new();
     private readonly Button _updaterUpdateButton = new();
@@ -235,6 +235,14 @@ internal sealed class UpdaterForm : Form
         _titleLabel.MouseDown += DragWindow;
         header.Controls.Add(_titleLabel);
 
+        // 업데이터 버전과 설치된 헬퍼 버전을 분리해 보여 준다.
+        _helperVersionLabel.Font = new Font("Segoe UI", 8, FontStyle.Regular);
+        _helperVersionLabel.ForeColor = Color.Gainsboro;
+        _helperVersionLabel.AutoSize = true;
+        _helperVersionLabel.MouseDown += DragWindow;
+        header.Controls.Add(_helperVersionLabel);
+        UpdateHeaderHelperVersionLabel();
+
         Button closeButton = CreateHeaderButton("X", 38);
         closeButton.Click += (_, _) => Close();
         header.Controls.Add(closeButton);
@@ -263,16 +271,6 @@ internal sealed class UpdaterForm : Form
         ConfigureCommandButton(_updaterUpdateButton, "업데이터 갱신", 590, 108);
         _updaterUpdateButton.Click += async (_, _) => await ApplyUpdaterUpdateManuallyAsync();
         header.Controls.Add(_updaterUpdateButton);
-
-        // 원격 최신 패키지가 현재 설치본과 다를 때만 버전 선택 버튼 왼쪽에 NEW를 표시한다.
-        _newVersionLabel.Text = "NEW";
-        _newVersionLabel.Font = new Font("Segoe UI", 9, FontStyle.Bold);
-        _newVersionLabel.ForeColor = Color.FromArgb(76, 220, 112);
-        _newVersionLabel.AutoSize = true;
-        _newVersionLabel.Visible = false;
-        _newVersionLabel.Location = new Point(ClientSize.Width - 514, 12);
-        _newVersionLabel.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        header.Controls.Add(_newVersionLabel);
 
         _hostPanel.Dock = DockStyle.Fill;
         _hostPanel.BackColor = Color.Black;
@@ -646,6 +644,7 @@ internal sealed class UpdaterForm : Form
             SetBusy(true);
             SetProgress(0);
             SetStatus("GitHub Releases에서 버전 목록을 확인하는 중...");
+            UpdateHeaderHelperVersionLabel();
 
             GitHubReleaseCatalog catalog = await GetReleaseCatalogAsync();
             _lastReleases = catalog.HelperReleases;
@@ -1877,6 +1876,15 @@ internal sealed class UpdaterForm : Form
     private string GetHelperVersion() => GetFileVersion(HelperPath);
     private static string GetFileVersion(string path) => File.Exists(path) ? FileVersionInfo.GetVersionInfo(path).FileVersion ?? "알 수 없음" : "없음";
 
+    private void UpdateHeaderHelperVersionLabel()
+    {
+        if (InvokeRequired) { BeginInvoke(new Action(UpdateHeaderHelperVersionLabel)); return; }
+
+        _helperVersionLabel.Text = $"HELPER {GetHelperVersion()}";
+        int titleWidth = TextRenderer.MeasureText(_titleLabel.Text, _titleLabel.Font).Width;
+        _helperVersionLabel.Location = new Point(_titleLabel.Left + titleWidth + 6, 14);
+    }
+
     private void SetBusy(bool busy)
     {
         _busy = busy;
@@ -1889,7 +1897,14 @@ internal sealed class UpdaterForm : Form
     private void SetNewVersionAvailable(bool available)
     {
         if (InvokeRequired) { BeginInvoke(new Action(() => SetNewVersionAvailable(available))); return; }
-        _newVersionLabel.Visible = available;
+
+        // 새 헬퍼 버전은 별도 라벨 대신 버전 선택 버튼 자체를 초록색으로 밝혀 알린다.
+        _checkButton.Text = available ? "버전 선택  NEW" : "버전 선택";
+        _checkButton.ForeColor = available ? Color.FromArgb(76, 220, 112) : Color.WhiteSmoke;
+        _checkButton.BackColor = available ? Color.FromArgb(31, 57, 39) : Color.FromArgb(32, 32, 32);
+        _checkButton.FlatAppearance.BorderColor = available
+            ? Color.FromArgb(76, 220, 112)
+            : Color.FromArgb(100, 100, 100);
     }
 
     private void SetUpdateHistoryAvailable(bool available)
