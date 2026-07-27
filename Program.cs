@@ -162,7 +162,6 @@ internal sealed class UpdaterForm : Form
     private readonly Button _historyButton = new();
     private readonly Button _updaterUpdateButton = new();
     private readonly Button _installPathButton = new();
-    private readonly Button _restartButton = new();
     private readonly System.Windows.Forms.Timer _periodicCheckTimer = new();
     private readonly System.Windows.Forms.Timer _embeddedLayoutTimer = new();
 
@@ -238,10 +237,11 @@ internal sealed class UpdaterForm : Form
         // 업데이터 버전과 설치된 헬퍼 버전을 분리해 보여 준다.
         _helperVersionLabel.Font = new Font("Segoe UI", 8, FontStyle.Regular);
         _helperVersionLabel.ForeColor = Color.Gainsboro;
+        _helperVersionLabel.BackColor = header.BackColor;
         _helperVersionLabel.AutoSize = true;
+        _helperVersionLabel.Visible = true;
         _helperVersionLabel.MouseDown += DragWindow;
         header.Controls.Add(_helperVersionLabel);
-        UpdateHeaderHelperVersionLabel();
 
         Button closeButton = CreateHeaderButton("X", 38);
         closeButton.Click += (_, _) => Close();
@@ -250,10 +250,6 @@ internal sealed class UpdaterForm : Form
         Button minimizeButton = CreateHeaderButton("_", 74);
         minimizeButton.Click += (_, _) => WindowState = FormWindowState.Minimized;
         header.Controls.Add(minimizeButton);
-
-        ConfigureCommandButton(_restartButton, "재시작", 162, 82);
-        _restartButton.Click += async (_, _) => await RestartHelperAsync();
-        header.Controls.Add(_restartButton);
 
         ConfigureCommandButton(_installPathButton, "설치 경로", 264, 96);
         _installPathButton.Click += async (_, _) => await ChangeInstallDirectoryAsync();
@@ -271,6 +267,10 @@ internal sealed class UpdaterForm : Form
         ConfigureCommandButton(_updaterUpdateButton, "업데이터 갱신", 590, 108);
         _updaterUpdateButton.Click += async (_, _) => await ApplyUpdaterUpdateManuallyAsync();
         header.Controls.Add(_updaterUpdateButton);
+
+        // 넓은 제목 라벨에 가려지지 않도록 헬퍼 버전 라벨을 헤더의 최상단에 둔다.
+        UpdateHeaderHelperVersionLabel();
+        _helperVersionLabel.BringToFront();
 
         _hostPanel.Dock = DockStyle.Fill;
         _hostPanel.BackColor = Color.Black;
@@ -1695,20 +1695,6 @@ internal sealed class UpdaterForm : Form
             oldFile.Delete();
     }
 
-    private async Task RestartHelperAsync()
-    {
-        if (_busy) return;
-        SetBusy(true);
-        try
-        {
-            SetStatus("헬퍼를 다시 시작하는 중...");
-            await StopAllLocalHelpersAsync();
-            await LaunchHelperEmbeddedAsync();
-        }
-        catch (Exception ex) { SetStatus($"헬퍼 재시작 실패: {ex.Message}"); }
-        finally { SetBusy(false); }
-    }
-
     private async Task LaunchHelperEmbeddedAsync()
     {
         if (!File.Exists(HelperPath)) throw new FileNotFoundException("HD2 Helper.exe를 찾을 수 없습니다.", HelperPath);
@@ -1883,6 +1869,7 @@ internal sealed class UpdaterForm : Form
         _helperVersionLabel.Text = $"HELPER {GetHelperVersion()}";
         int titleWidth = TextRenderer.MeasureText(_titleLabel.Text, _titleLabel.Font).Width;
         _helperVersionLabel.Location = new Point(_titleLabel.Left + titleWidth + 6, 14);
+        _helperVersionLabel.BringToFront();
     }
 
     private void SetBusy(bool busy)
@@ -1891,7 +1878,6 @@ internal sealed class UpdaterForm : Form
         _checkButton.Enabled = !busy;
         _historyButton.Enabled = !busy;
         _installPathButton.Enabled = !busy;
-        _restartButton.Enabled = !busy;
     }
 
     private void SetNewVersionAvailable(bool available)
