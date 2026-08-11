@@ -781,7 +781,8 @@ internal sealed class UpdaterForm : Form
             GitHubReleaseInfo[] testReleaseSnapshot = Array.Empty<GitHubReleaseInfo>();
             try
             {
-                GitHubReleaseCatalog catalog = await GetReleaseCatalogAsync();
+                // 버전 선택은 사용자가 직접 최신 목록을 요청한 동작이므로 헬퍼 릴리스 캐시를 건너뛴다.
+                GitHubReleaseCatalog catalog = await GetReleaseCatalogAsync(refreshHelperReleases: true);
                 _lastReleases = catalog.StableHelperReleases;
                 testReleaseSnapshot = catalog.TestHelperReleases.ToArray();
                 _latestUpdaterRelease = catalog.LatestUpdater;
@@ -1268,18 +1269,18 @@ internal sealed class UpdaterForm : Form
         await RefreshUpdateStatusAsync(interactive: false);
     }
 
-    private async Task<GitHubReleaseCatalog> GetReleaseCatalogAsync()
+    private async Task<GitHubReleaseCatalog> GetReleaseCatalogAsync(bool refreshHelperReleases = false)
     {
         var releases = new List<GitHubReleaseInfo>();
         var updaterReleases = new List<GitHubUpdaterInfo>();
-        using JsonDocument helperDocument = await GetGitHubJsonAsync(HelperReleasesApiUrl);
+        using JsonDocument helperDocument = await GetGitHubJsonAsync(HelperReleasesApiUrl, refreshHelperReleases);
         foreach (JsonElement releaseElement in helperDocument.RootElement.EnumerateArray())
             AddReleaseToCatalog(releaseElement, releases, updaterReleases);
 
         try
         {
             // GitHub의 목록 API가 새 릴리스를 늦게 반영하는 경우가 있어 latest 응답을 별도로 합친다.
-            using JsonDocument latestDocument = await GetGitHubJsonAsync(HelperLatestReleaseApiUrl);
+            using JsonDocument latestDocument = await GetGitHubJsonAsync(HelperLatestReleaseApiUrl, refreshHelperReleases);
             AddReleaseToCatalog(latestDocument.RootElement, releases, updaterReleases);
         }
         catch (HttpRequestException)
@@ -1319,12 +1320,13 @@ internal sealed class UpdaterForm : Form
         return new GitHubReleaseCatalog(stableReleases, testReleases, latestUpdater);
     }
 
-    private static async Task<JsonDocument> GetGitHubJsonAsync(string apiUrl)
+    private static async Task<JsonDocument> GetGitHubJsonAsync(string apiUrl, bool forceRefresh = false)
     {
         lock (GitHubApiCacheLock)
         {
             if (GitHubApiCache.TryGetValue(apiUrl, out GitHubApiCacheEntry? cached)
-                && cached.ExpiresAtUtc > DateTimeOffset.UtcNow)
+                && cached.ExpiresAtUtc > DateTimeOffset.UtcNow
+                && !forceRefresh)
             {
                 return JsonDocument.Parse(cached.Json);
             }
