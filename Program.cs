@@ -1369,11 +1369,13 @@ internal sealed class UpdaterForm : Form
     {
         if (releaseElement.GetProperty("draft").GetBoolean()) return;
         string tag = releaseElement.GetProperty("tag_name").GetString() ?? "알 수 없는 버전";
+        bool isPrerelease = releaseElement.GetProperty("prerelease").GetBoolean();
         JsonElement? packageAsset = null;
         foreach (JsonElement asset in releaseElement.GetProperty("assets").EnumerateArray())
         {
             string assetName = asset.GetProperty("name").GetString() ?? "";
-            if (assetName.Equals(PackageFileName, StringComparison.OrdinalIgnoreCase)) packageAsset = asset;
+            // 정식판은 고정 파일명, 시험판은 버전이 붙은 ZIP을 사용하므로 둘 다 설치 패키지로 인식한다.
+            if (IsHelperPackageAsset(assetName, isPrerelease)) packageAsset = asset;
             if (assetName.Equals(UpdaterAssetFileName, StringComparison.OrdinalIgnoreCase)
                 && TryParseUpdaterReleaseVersion(tag, out Version? updaterVersion))
             {
@@ -1404,11 +1406,21 @@ internal sealed class UpdaterForm : Form
             tag,
             name,
             published,
-            releaseElement.GetProperty("prerelease").GetBoolean(),
+            isPrerelease,
             assetElement.GetProperty("id").GetInt64(),
             assetElement.GetProperty("size").GetInt64(),
             assetElement.GetProperty("browser_download_url").GetString() ?? "",
             ParseReleaseVersion(tag)));
+    }
+
+    private static bool IsHelperPackageAsset(string assetName, bool isPrerelease)
+    {
+        if (assetName.Equals(PackageFileName, StringComparison.OrdinalIgnoreCase)) return true;
+
+        // GitHub가 자동으로 붙이는 Source code ZIP은 제외하고, 시험판 배포 ZIP만 허용한다.
+        return isPrerelease
+            && assetName.StartsWith("HD2.Helper-test-", StringComparison.OrdinalIgnoreCase)
+            && assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseUpdaterReleaseVersion(string tagName, out Version? version)
