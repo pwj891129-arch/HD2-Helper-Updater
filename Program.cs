@@ -123,6 +123,8 @@ internal sealed class UpdaterForm : Form
     private const string PackageFileName = "HD2.Helper.zip";
     private const string UpdaterAssetFileName = "HD2.Helper.Updater.exe";
     private const string UpdaterReleaseTagPrefix = "updater-v";
+    // 테스트 코드는 해시만 보관한다. 공개 릴리스 주소의 접근 자체를 막지는 않지만 일반 목록에서는 시험판을 분리한다.
+    private const string TestChannelCodeHash = "d85cd20564ce310a8d398b7fb4a4998f1bef15bbc1cda840a88a780b9f5838c0";
     private const string StateFileName = "updater-state.json";
     private const string SettingsFileName = "updater-settings.json";
     private const string DeleteListFileName = "update-delete.txt";
@@ -162,6 +164,7 @@ internal sealed class UpdaterForm : Form
     private readonly Button _historyButton = new();
     private readonly Button _updaterUpdateButton = new();
     private readonly Button _installPathButton = new();
+    private readonly Button _helpButton = new();
     private readonly System.Windows.Forms.Timer _periodicCheckTimer = new();
     private readonly System.Windows.Forms.Timer _embeddedLayoutTimer = new();
 
@@ -255,6 +258,11 @@ internal sealed class UpdaterForm : Form
         _installPathButton.Click += async (_, _) => await ChangeInstallDirectoryAsync();
         header.Controls.Add(_installPathButton);
 
+        // 설정 화면에 드러나지 않는 프리셋 편집 단축 동작만 따로 안내한다.
+        ConfigureCommandButton(_helpButton, "도움말", 168, 88);
+        _helpButton.Click += (_, _) => ShowShortcutHelp();
+        header.Controls.Add(_helpButton);
+
         ConfigureCommandButton(_checkButton, "버전 선택", 362, 92);
         _checkButton.Click += async (_, _) => await ShowVersionSelectionMenuAsync();
         header.Controls.Add(_checkButton);
@@ -346,6 +354,69 @@ internal sealed class UpdaterForm : Form
         button.Location = new Point(ClientSize.Width - rightOffset, 7);
         button.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         button.TabStop = false;
+    }
+
+    private void ShowShortcutHelp()
+    {
+        using Form dialog = CreateShortcutHelpDialog();
+        dialog.ShowDialog(this);
+    }
+
+    private static Form CreateShortcutHelpDialog()
+    {
+        var dialog = new Form
+        {
+            Text = "도움말",
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(520, 390),
+            MinimumSize = new Size(460, 330),
+            BackColor = Color.FromArgb(24, 24, 24),
+            ForeColor = Color.WhiteSmoke,
+            FormBorderStyle = FormBorderStyle.Sizable,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false
+        };
+        var title = new Label
+        {
+            Text = "숨은 조작 도움말",
+            Dock = DockStyle.Top,
+            Height = 42,
+            Padding = new Padding(14, 10, 0, 0),
+            Font = new Font("Segoe UI", 11, FontStyle.Bold),
+            ForeColor = Color.FromArgb(255, 216, 0),
+            BackColor = Color.FromArgb(32, 32, 32)
+        };
+        var contents = new RichTextBox
+        {
+            Dock = DockStyle.Fill,
+            ReadOnly = true,
+            BorderStyle = BorderStyle.None,
+            BackColor = Color.FromArgb(24, 24, 24),
+            ForeColor = Color.Gainsboro,
+            Font = new Font("Segoe UI", 10),
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            Margin = new Padding(14),
+            Padding = new Padding(14),
+            Text =
+                "프리셋 탭 (스트라타젬 / 장비 공통)\n\n" +
+                "Shift + 좌클릭  : 현재 탭 뒤에 새 프리셋 추가\n" +
+                "Ctrl + 좌클릭   : 현재 프리셋 삭제\n" +
+                "Shift + 우클릭  : 현재 프리셋 복제\n" +
+                "Ctrl + 우클릭   : 현재 프리셋 삭제\n" +
+                "더블클릭        : 프리셋 이름 변경\n" +
+                "Ctrl + S        : 현재 선택한 프리셋 저장\n\n" +
+                "스트라타젬 슬롯\n\n" +
+                "Shift + 좌클릭  : 오버레이 휠 표시 상태 전환\n" +
+                "초록 테두리     : 휠에 표시\n" +
+                "빨강 테두리     : 휠에서 비표시\n" +
+                "회색 테두리     : 스트라타젬 프리셋 미선택 상태\n\n" +
+                "표시 상태는 스트라타젬 프리셋마다 따로 저장됩니다."
+        };
+
+        dialog.Controls.Add(contents);
+        dialog.Controls.Add(title);
+        return dialog;
     }
 
     private async Task InitializeAsync()
@@ -647,7 +718,7 @@ internal sealed class UpdaterForm : Form
             UpdateHeaderHelperVersionLabel();
 
             GitHubReleaseCatalog catalog = await GetReleaseCatalogAsync();
-            _lastReleases = catalog.HelperReleases;
+            _lastReleases = catalog.StableHelperReleases;
             _latestUpdaterRelease = catalog.LatestUpdater;
             GitHubReleaseInfo? latest = _lastReleases.FirstOrDefault();
             UpdaterState state = LoadState();
@@ -707,10 +778,12 @@ internal sealed class UpdaterForm : Form
         SetStatus("사용 가능한 버전 목록을 불러오는 중...");
         try
         {
+            GitHubReleaseInfo[] testReleaseSnapshot = Array.Empty<GitHubReleaseInfo>();
             try
             {
                 GitHubReleaseCatalog catalog = await GetReleaseCatalogAsync();
-                _lastReleases = catalog.HelperReleases;
+                _lastReleases = catalog.StableHelperReleases;
+                testReleaseSnapshot = catalog.TestHelperReleases.ToArray();
                 _latestUpdaterRelease = catalog.LatestUpdater;
                 GitHubReleaseInfo? latest = _lastReleases.FirstOrDefault();
                 UpdaterState state = LoadState();
@@ -728,6 +801,9 @@ internal sealed class UpdaterForm : Form
 
             GitHubReleaseInfo[] releaseSnapshot = _lastReleases.ToArray();
             List<VersionChoice> onlineChoices = await Task.Run(() => BuildOnlineVersionChoices(releaseSnapshot));
+            List<VersionChoice> testChoices = IsTestChannelUnlocked()
+                ? await Task.Run(() => BuildOnlineVersionChoices(testReleaseSnapshot))
+                : new List<VersionChoice>();
             List<VersionChoice> localChoices = await Task.Run(BuildLocalVersionChoices);
             if (onlineChoices.Count == 0 && localChoices.Count == 0)
             {
@@ -748,6 +824,8 @@ internal sealed class UpdaterForm : Form
             {
                 menu.Items.Add(CreateVersionChoiceMenuItem(choice));
             }
+
+            AddTestChannelMenuItems(menu, testChoices);
 
             if (onlineChoices.Count > 0) menu.Items.Add(new ToolStripSeparator());
             var localMenu = new ToolStripMenuItem("로컬 저장 버전 보기")
@@ -818,15 +896,16 @@ internal sealed class UpdaterForm : Form
     private async Task<List<UpdateHistoryItem>> GetUpdateHistoryAsync()
     {
         var history = new List<UpdateHistoryItem>();
+        bool includeTestReleases = IsTestChannelUnlocked();
         using JsonDocument helperDocument = await GetGitHubJsonAsync(HelperReleasesApiUrl);
         foreach (JsonElement releaseElement in helperDocument.RootElement.EnumerateArray())
-            AddUpdateHistoryItem(releaseElement, history);
+            AddUpdateHistoryItem(releaseElement, history, includeTestReleases);
 
         try
         {
             // 목록 API의 반영이 늦어도 최신 헬퍼 릴리스의 변경 내역은 바로 볼 수 있게 병합한다.
             using JsonDocument latestDocument = await GetGitHubJsonAsync(HelperLatestReleaseApiUrl);
-            AddUpdateHistoryItem(latestDocument.RootElement, history);
+            AddUpdateHistoryItem(latestDocument.RootElement, history, includeTestReleases);
         }
         catch (HttpRequestException)
         {
@@ -835,12 +914,12 @@ internal sealed class UpdaterForm : Form
 
         using JsonDocument updaterDocument = await GetGitHubJsonAsync(UpdaterReleasesApiUrl);
         foreach (JsonElement releaseElement in updaterDocument.RootElement.EnumerateArray())
-            AddUpdateHistoryItem(releaseElement, history);
+            AddUpdateHistoryItem(releaseElement, history, includeTestReleases);
 
         try
         {
             using JsonDocument latestDocument = await GetGitHubJsonAsync(UpdaterLatestReleaseApiUrl);
-            AddUpdateHistoryItem(latestDocument.RootElement, history);
+            AddUpdateHistoryItem(latestDocument.RootElement, history, includeTestReleases);
         }
         catch (HttpRequestException)
         {
@@ -853,9 +932,12 @@ internal sealed class UpdaterForm : Form
             .ToList();
     }
 
-    private static void AddUpdateHistoryItem(JsonElement releaseElement, List<UpdateHistoryItem> history)
+    private static void AddUpdateHistoryItem(JsonElement releaseElement, List<UpdateHistoryItem> history, bool includeTestReleases)
     {
         if (releaseElement.GetProperty("draft").GetBoolean()) return;
+        if (!includeTestReleases
+            && releaseElement.TryGetProperty("prerelease", out JsonElement prerelease)
+            && prerelease.GetBoolean()) return;
         long releaseId = releaseElement.GetProperty("id").GetInt64();
         if (history.Any(item => item.ReleaseId == releaseId)) return;
 
@@ -955,6 +1037,128 @@ internal sealed class UpdaterForm : Form
         };
         item.Click += async (_, _) => await ApplySelectedVersionAsync(choice);
         return item;
+    }
+
+    private void AddTestChannelMenuItems(ContextMenuStrip menu, IReadOnlyList<VersionChoice> testChoices)
+    {
+        menu.Items.Add(new ToolStripSeparator());
+        if (!IsTestChannelUnlocked())
+        {
+            var unlockItem = new ToolStripMenuItem("테스트 코드 입력...")
+            {
+                AutoSize = false,
+                Size = new Size(310, 30),
+                ForeColor = Color.FromArgb(255, 216, 0),
+                BackColor = Color.FromArgb(30, 30, 30)
+            };
+            unlockItem.Click += (_, _) =>
+            {
+                if (ShowTestChannelCodeDialog())
+                    SetStatus("테스트 채널이 해제되었습니다. 버전 선택을 다시 열어주세요.");
+            };
+            menu.Items.Add(unlockItem);
+            return;
+        }
+
+        var testMenu = new ToolStripMenuItem("테스트 버전")
+        {
+            AutoSize = false,
+            Size = new Size(310, 30),
+            ForeColor = Color.FromArgb(255, 216, 0),
+            BackColor = Color.FromArgb(30, 30, 30),
+            Enabled = testChoices.Count > 0
+        };
+        foreach (VersionChoice choice in testChoices)
+            testMenu.DropDownItems.Add(CreateVersionChoiceMenuItem(choice));
+
+        if (testChoices.Count > 0)
+            testMenu.DropDownItems.Add(new ToolStripSeparator());
+
+        var lockItem = new ToolStripMenuItem("테스트 채널 해제");
+        lockItem.Click += (_, _) =>
+        {
+            UpdaterSettings settings = LoadUpdaterSettings();
+            settings.TestChannelUnlocked = false;
+            SaveUpdaterSettings(settings);
+            SetStatus("테스트 채널을 해제했습니다.");
+        };
+        testMenu.DropDownItems.Add(lockItem);
+        menu.Items.Add(testMenu);
+    }
+
+    private static bool IsTestChannelUnlocked() => LoadUpdaterSettings().TestChannelUnlocked;
+
+    private static bool IsTestChannelCodeValid(string value)
+    {
+        string normalized = value.Trim().ToUpperInvariant();
+        if (normalized.Length == 0) return false;
+
+        byte[] actualHash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        byte[] expectedHash = Convert.FromHexString(TestChannelCodeHash);
+        return CryptographicOperations.FixedTimeEquals(actualHash, expectedHash);
+    }
+
+    private bool ShowTestChannelCodeDialog()
+    {
+        using var dialog = new Form
+        {
+            Text = "테스트 채널",
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(360, 155),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            BackColor = Color.FromArgb(28, 28, 28),
+            ForeColor = Color.WhiteSmoke
+        };
+        var label = new Label
+        {
+            Text = "테스트 코드",
+            Location = new Point(18, 20),
+            Size = new Size(320, 22),
+            ForeColor = Color.Gainsboro
+        };
+        var input = new TextBox
+        {
+            Location = new Point(18, 48),
+            Size = new Size(324, 27),
+            UseSystemPasswordChar = true,
+            BackColor = Color.FromArgb(18, 18, 18),
+            ForeColor = Color.WhiteSmoke,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+        var applyButton = new Button
+        {
+            Text = "확인",
+            DialogResult = DialogResult.OK,
+            Location = new Point(184, 100),
+            Size = new Size(76, 30)
+        };
+        var cancelButton = new Button
+        {
+            Text = "취소",
+            DialogResult = DialogResult.Cancel,
+            Location = new Point(266, 100),
+            Size = new Size(76, 30)
+        };
+        dialog.AcceptButton = applyButton;
+        dialog.CancelButton = cancelButton;
+        dialog.Controls.AddRange(new Control[] { label, input, applyButton, cancelButton });
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+            return false;
+
+        if (!IsTestChannelCodeValid(input.Text))
+        {
+            MessageBox.Show(this, "테스트 코드가 맞지 않습니다.", "테스트 채널", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return false;
+        }
+
+        UpdaterSettings settings = LoadUpdaterSettings();
+        settings.TestChannelUnlocked = true;
+        SaveUpdaterSettings(settings);
+        return true;
     }
 
     private List<VersionChoice> BuildOnlineVersionChoices(IReadOnlyList<GitHubReleaseInfo> releases)
@@ -1104,10 +1308,17 @@ internal sealed class UpdaterForm : Form
             .OrderByDescending(release => release.SortVersion)
             .ThenByDescending(release => release.PublishedAtUtc)
             .ToList();
+        // 시험판은 기본 최신 버전/자동 갱신 판단에서 완전히 제외하고, 테스트 채널을 해제한 경우에만 메뉴에 별도로 제공한다.
+        List<GitHubReleaseInfo> stableReleases = sortedReleases
+            .Where(release => !release.Prerelease)
+            .ToList();
+        List<GitHubReleaseInfo> testReleases = sortedReleases
+            .Where(release => release.Prerelease)
+            .ToList();
         GitHubUpdaterInfo? latestUpdater = updaterReleases
             .OrderByDescending(updater => updater.Version)
             .FirstOrDefault();
-        return new GitHubReleaseCatalog(sortedReleases, latestUpdater);
+        return new GitHubReleaseCatalog(stableReleases, testReleases, latestUpdater);
     }
 
     private static async Task<JsonDocument> GetGitHubJsonAsync(string apiUrl)
@@ -1977,7 +2188,8 @@ internal sealed class UpdaterForm : Form
         long AssetSize,
         string AssetDownloadUrl);
     private sealed record GitHubReleaseCatalog(
-        List<GitHubReleaseInfo> HelperReleases,
+        List<GitHubReleaseInfo> StableHelperReleases,
+        List<GitHubReleaseInfo> TestHelperReleases,
         GitHubUpdaterInfo? LatestUpdater);
     private sealed record GitHubApiCacheEntry(string Json, DateTimeOffset ExpiresAtUtc);
     private sealed record VersionChoice(
@@ -1997,6 +2209,8 @@ internal sealed class UpdaterForm : Form
     private sealed class UpdaterSettings
     {
         public string InstallDirectory { get; set; } = "";
+        // 인증 코드는 저장하지 않고 테스트 채널 해제 여부만 남긴다.
+        public bool TestChannelUnlocked { get; set; }
     }
 
     private sealed class UpdaterState
