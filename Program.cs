@@ -896,16 +896,15 @@ internal sealed class UpdaterForm : Form
     private async Task<List<UpdateHistoryItem>> GetUpdateHistoryAsync()
     {
         var history = new List<UpdateHistoryItem>();
-        bool includeTestReleases = IsTestChannelUnlocked();
         using JsonDocument helperDocument = await GetGitHubJsonAsync(HelperReleasesApiUrl);
         foreach (JsonElement releaseElement in helperDocument.RootElement.EnumerateArray())
-            AddUpdateHistoryItem(releaseElement, history, includeTestReleases);
+            AddUpdateHistoryItem(releaseElement, history);
 
         try
         {
             // 목록 API의 반영이 늦어도 최신 헬퍼 릴리스의 변경 내역은 바로 볼 수 있게 병합한다.
             using JsonDocument latestDocument = await GetGitHubJsonAsync(HelperLatestReleaseApiUrl);
-            AddUpdateHistoryItem(latestDocument.RootElement, history, includeTestReleases);
+            AddUpdateHistoryItem(latestDocument.RootElement, history);
         }
         catch (HttpRequestException)
         {
@@ -914,12 +913,12 @@ internal sealed class UpdaterForm : Form
 
         using JsonDocument updaterDocument = await GetGitHubJsonAsync(UpdaterReleasesApiUrl);
         foreach (JsonElement releaseElement in updaterDocument.RootElement.EnumerateArray())
-            AddUpdateHistoryItem(releaseElement, history, includeTestReleases);
+            AddUpdateHistoryItem(releaseElement, history);
 
         try
         {
             using JsonDocument latestDocument = await GetGitHubJsonAsync(UpdaterLatestReleaseApiUrl);
-            AddUpdateHistoryItem(latestDocument.RootElement, history, includeTestReleases);
+            AddUpdateHistoryItem(latestDocument.RootElement, history);
         }
         catch (HttpRequestException)
         {
@@ -932,12 +931,11 @@ internal sealed class UpdaterForm : Form
             .ToList();
     }
 
-    private static void AddUpdateHistoryItem(JsonElement releaseElement, List<UpdateHistoryItem> history, bool includeTestReleases)
+    private static void AddUpdateHistoryItem(JsonElement releaseElement, List<UpdateHistoryItem> history)
     {
         if (releaseElement.GetProperty("draft").GetBoolean()) return;
-        if (!includeTestReleases
-            && releaseElement.TryGetProperty("prerelease", out JsonElement prerelease)
-            && prerelease.GetBoolean()) return;
+        // 테스트 채널의 프리릴리스는 테스터 설치용으로만 쓰며, 공개 업데이트 내역과 NEW 표시에는 포함하지 않는다.
+        if (releaseElement.TryGetProperty("prerelease", out JsonElement prerelease) && prerelease.GetBoolean()) return;
         long releaseId = releaseElement.GetProperty("id").GetInt64();
         if (history.Any(item => item.ReleaseId == releaseId)) return;
 
