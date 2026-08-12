@@ -143,6 +143,8 @@ internal sealed class UpdaterForm : Form
     private const int BaseReferenceHeight = 1080;
     private const double MinClientScale = 0.5;
     private static readonly TimeSpan GitHubApiCacheLifetime = TimeSpan.FromMinutes(5);
+    // "버전 선택"처럼 강제 새로고침을 눌러도 같은 API 주소는 최소 1분 동안 재요청하지 않는다.
+    private static readonly TimeSpan GitHubApiMinimumRequestInterval = TimeSpan.FromMinutes(1);
 
     private static readonly HttpClient Http = CreateHttpClient();
     private static readonly object GitHubApiCacheLock = new();
@@ -781,7 +783,7 @@ internal sealed class UpdaterForm : Form
             GitHubReleaseInfo[] testReleaseSnapshot = Array.Empty<GitHubReleaseInfo>();
             try
             {
-                // 버전 선택은 사용자가 직접 최신 목록을 요청한 동작이므로 헬퍼 릴리스 캐시를 건너뛴다.
+                // 버전 선택은 최신 목록을 요청하지만, GitHub 요청 제한을 피하기 위해 1분 안에는 직전 응답을 재사용한다.
                 GitHubReleaseCatalog catalog = await GetReleaseCatalogAsync(refreshHelperReleases: true);
                 _lastReleases = catalog.StableHelperReleases;
                 testReleaseSnapshot = catalog.TestHelperReleases.ToArray();
@@ -1325,8 +1327,9 @@ internal sealed class UpdaterForm : Form
         lock (GitHubApiCacheLock)
         {
             if (GitHubApiCache.TryGetValue(apiUrl, out GitHubApiCacheEntry? cached)
-                && cached.ExpiresAtUtc > DateTimeOffset.UtcNow
-                && !forceRefresh)
+                && (!forceRefresh
+                    ? cached.ExpiresAtUtc > DateTimeOffset.UtcNow
+                    : cached.FetchedAtUtc.Add(GitHubApiMinimumRequestInterval) > DateTimeOffset.UtcNow))
             {
                 return JsonDocument.Parse(cached.Json);
             }
@@ -1358,6 +1361,7 @@ internal sealed class UpdaterForm : Form
         {
             GitHubApiCache[apiUrl] = new GitHubApiCacheEntry(
                 json,
+                DateTimeOffset.UtcNow,
                 DateTimeOffset.UtcNow.Add(GitHubApiCacheLifetime));
         }
 
@@ -2203,7 +2207,7 @@ internal sealed class UpdaterForm : Form
         List<GitHubReleaseInfo> StableHelperReleases,
         List<GitHubReleaseInfo> TestHelperReleases,
         GitHubUpdaterInfo? LatestUpdater);
-    private sealed record GitHubApiCacheEntry(string Json, DateTimeOffset ExpiresAtUtc);
+    private sealed record GitHubApiCacheEntry(string Json, DateTimeOffset FetchedAtUtc, DateTimeOffset ExpiresAtUtc);
     private sealed record VersionChoice(
         string DisplayText,
         string? PackagePath,
