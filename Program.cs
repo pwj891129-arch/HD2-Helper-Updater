@@ -1424,8 +1424,7 @@ internal sealed class UpdaterForm : Form
         if (assetName.Equals(PackageFileName, StringComparison.OrdinalIgnoreCase)) return true;
 
         // GitHub가 자동으로 붙이는 Source code ZIP은 제외하고, 시험판 배포 ZIP만 허용한다.
-        return isPrerelease
-            && assetName.StartsWith("HD2.Helper-test-", StringComparison.OrdinalIgnoreCase)
+        return assetName.StartsWith("HD2.Helper-", StringComparison.OrdinalIgnoreCase)
             && assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
     }
 
